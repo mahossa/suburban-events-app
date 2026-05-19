@@ -2,8 +2,14 @@ const { getDefaultConfig } = require('expo/metro-config');
 
 const config = getDefaultConfig(__dirname);
 
-// @opentelemetry uses dynamic import() which Hermes cannot compile.
-// It's pulled in by @supabase/supabase-js but is only telemetry — safe to stub.
+// Strip webpack/vite magic comments (e.g. /* webpackIgnore: true */) before
+// Hermes sees the bundle. These appear in @supabase/supabase-js → @opentelemetry
+// and cause a parse error in Hermes. The transformer also stubs the module below.
+config.transformer.babelTransformerPath = require.resolve(
+  './strip-magic-comments-transformer'
+);
+
+// Stub the @opentelemetry module itself so it resolves to an empty module.
 const originalResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (moduleName.startsWith('@opentelemetry/')) {
