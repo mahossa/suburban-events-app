@@ -3,20 +3,22 @@ import { StatusBar } from 'expo-status-bar';
 import {
   StyleSheet, Text, View, FlatList, TouchableOpacity,
   ActivityIndicator, RefreshControl, Platform, Animated,
-  Linking, ScrollView, Modal,
+  Linking, ScrollView, Modal, ActionSheetIOS, Alert, Image,
 } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import * as ExpoCalendar from 'expo-calendar';
+import { Calendar } from 'react-native-calendars';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SUPABASE_URL = 'https://ojegaukvxjmhunqjhkxi.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9qZWdhdWt2eGptaHVucWpoa3hpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxMjk2ODksImV4cCI6MjA5NDcwNTY4OX0.q22y2v8vPAbc0qt7eBun-9XLY6NMqUiHfrv2mCTIoq4';
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const REGIONS = {
-  'South Suburbs': ['Tinley Park', 'New Lenox', 'Frankfort', 'Orland Park', 'Mokena', 'Lockport', 'Lemont'],
-  'West Suburbs':  ['Naperville', 'Downers Grove'],
-  'North Suburbs': ['Arlington Heights', 'Mount Prospect', 'Schaumburg'],
+  'South Suburbs': ['Tinley Park', 'New Lenox', 'Frankfort', 'Orland Park', 'Mokena', 'Lockport'],
+  'West Suburbs':  ['Naperville', 'Downers Grove', 'Oak Park', 'Wheaton', 'Elmhurst'],
+  'North Suburbs': ['Arlington Heights', 'Mount Prospect', 'Schaumburg', 'Evanston', 'Waukegan', 'Palatine', 'Buffalo Grove', 'Hoffman Estates'],
 };
 
 const CATEGORY_COLORS = {
@@ -24,6 +26,8 @@ const CATEGORY_COLORS = {
   village: '#1565C0',
   chamber: '#E65100',
   library: '#6A1B9A',
+  music:   '#AD1457',
+  market:  '#00695C',
 };
 
 const CATEGORY_LABELS = {
@@ -31,6 +35,8 @@ const CATEGORY_LABELS = {
   village: 'Village',
   chamber: 'Chamber',
   library: 'Library',
+  music:   'Music',
+  market:  'Market',
 };
 
 const EVENT_TAGS = [
@@ -53,7 +59,7 @@ const EVENT_TAGS = [
   },
   {
     id: 'market', label: 'Market', icon: '🛍️',
-    keywords: ['farmers market', 'vendor market', 'craft fair', 'flea market',
+    keywords: ['farmers market', 'country market', 'vendor market', 'craft fair', 'flea market',
                'bazaar', 'market day', 'artisan market', 'car show', 'vendor fair'],
   },
   {
@@ -107,8 +113,6 @@ const EVENT_TAGS = [
   },
 ];
 
-// Tag from title only — descriptions bleed across events in some scrapers
-// causing false positive tags.
 function getEventTags(event) {
   const text = event.title;
   return EVENT_TAGS.filter(tag =>
@@ -119,87 +123,80 @@ function getEventTags(event) {
   );
 }
 
-// Colorful cartoon house icon built from Views
-function HouseIcon({ size = 44 }) {
-  const w = size;
-  return (
-    <View style={{ width: w, height: w, alignItems: 'center', justifyContent: 'flex-end' }}>
+async function addToCalendar(event) {
+  const { status } = await ExpoCalendar.requestCalendarPermissionsAsync();
+  if (status !== 'granted') {
+    Alert.alert('Permission needed', 'Please allow calendar access in Settings to add events.');
+    return;
+  }
 
-      {/* Sun */}
-      <View style={{
-        position: 'absolute', top: w * 0.04, left: w * 0.04,
-        width: w * 0.20, height: w * 0.20, borderRadius: w * 0.10,
-        backgroundColor: '#FFD93D',
-      }} />
+  const startDate = event.start_datetime ? new Date(event.start_datetime) : new Date();
+  const endDate   = new Date(startDate.getTime() + 60 * 60 * 1000); // default +1 hour
 
-      {/* Chimney */}
-      <View style={{
-        position: 'absolute', top: w * 0.14, right: w * 0.21,
-        width: w * 0.09, height: w * 0.20,
-        backgroundColor: '#C1440E', borderRadius: 1,
-      }} />
-
-      {/* Roof */}
-      <View style={{
-        width: 0, height: 0,
-        borderLeftWidth: w * 0.43, borderRightWidth: w * 0.43,
-        borderBottomWidth: w * 0.30,
-        borderLeftColor: 'transparent', borderRightColor: 'transparent',
-        borderBottomColor: '#FF6B6B',
-        marginBottom: -1, zIndex: 2,
-      }} />
-
-      {/* House body */}
-      <View style={{
-        width: w * 0.70, height: w * 0.38,
-        backgroundColor: '#FFF8EE',
-        flexDirection: 'row', alignItems: 'flex-end',
-        justifyContent: 'space-around',
-        paddingHorizontal: w * 0.05,
-        overflow: 'hidden', zIndex: 2,
-      }}>
-        {/* Window */}
-        <View style={{
-          width: w * 0.19, height: w * 0.19,
-          backgroundColor: '#48CAE4',
-          borderRadius: 2, marginBottom: w * 0.08,
-          borderWidth: 1.5, borderColor: '#FFF8EE',
-        }} />
-        {/* Door */}
-        <View style={{
-          width: w * 0.21, height: w * 0.28,
-          backgroundColor: '#C17F4A',
-          borderTopLeftRadius: w * 0.10, borderTopRightRadius: w * 0.10,
-        }}>
-          <View style={{
-            position: 'absolute', right: w * 0.03, top: '45%',
-            width: w * 0.04, height: w * 0.04,
-            borderRadius: w * 0.02, backgroundColor: '#FFD93D',
-          }} />
-        </View>
-      </View>
-
-      {/* Grass */}
-      <View style={{
-        width: w * 0.86, height: w * 0.09,
-        backgroundColor: '#6BCB77', borderRadius: 2,
-      }} />
-    </View>
+  ActionSheetIOS.showActionSheetWithOptions(
+    { options: ['Apple Calendar', 'Google Calendar', 'Cancel'], cancelButtonIndex: 2 },
+    async (idx) => {
+      if (idx === 0) {
+        try {
+          const cals = await ExpoCalendar.getCalendarsAsync(ExpoCalendar.EntityTypes.EVENT);
+          const cal  = cals.find(c => c.allowsModifications) || cals[0];
+          if (!cal) { Alert.alert('No calendar found'); return; }
+          await ExpoCalendar.createEventAsync(cal.id, {
+            title:     event.title,
+            startDate,
+            endDate,
+            notes:     event.description || '',
+            location:  event.location    || '',
+          });
+          Alert.alert('Added!', `"${event.title}" was added to your calendar.`);
+        } catch {
+          Alert.alert('Error', 'Could not add the event to your calendar.');
+        }
+      } else if (idx === 1) {
+        const fmt = (d) => d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+        const qs  = new URLSearchParams({
+          action:   'TEMPLATE',
+          text:     event.title,
+          dates:    `${fmt(startDate)}/${fmt(endDate)}`,
+          details:  event.description || '',
+          location: event.location    || '',
+        });
+        Linking.openURL(`https://calendar.google.com/calendar/render?${qs.toString()}`);
+      }
+    }
   );
 }
+
 
 const SPLASH_ICONS = [
   { icon: '🎵', label: 'Concerts' },
   { icon: '🎭', label: 'Arts' },
   { icon: '🌽', label: 'Markets' },
   { icon: '⚽', label: 'Sports' },
-  { icon: '🎨', label: 'Festivals' },
+  { icon: '🎪', label: 'Festivals' },
   { icon: '🎆', label: 'Events' },
   { icon: '🍕', label: 'Food' },
-  { icon: '🎪', label: 'Fun' },
+  { icon: '🎡', label: 'Fun' },
 ];
 
-// ─── Splash Screen ────────────────────────────────────────────────────────────
+const STREAMERS = [
+  { color: '#FF6B6B', top: -10, left: '2%',   rotate: '20deg',  width: 7,  height: 130 },
+  { color: '#FFD93D', top: -5,  left: '16%',  rotate: '-15deg', width: 5,  height: 100 },
+  { color: '#6BCB77', top: -10, left: '32%',  rotate: '10deg',  width: 8,  height: 115 },
+  { color: '#48CAE4', top: -5,  left: '50%',  rotate: '-25deg', width: 6,  height: 95  },
+  { color: '#C17F4A', top: -10, left: '67%',  rotate: '18deg',  width: 7,  height: 120 },
+  { color: '#48CAE4', top: -5,  right: '26%', rotate: '-10deg', width: 6,  height: 108 },
+  { color: '#FF6B6B', top: -5,  right: '14%', rotate: '-12deg', width: 5,  height: 105 },
+  { color: '#6BCB77', top: -10, right: '2%',  rotate: '22deg',  width: 7,  height: 118 },
+  { color: '#FFD93D', bottom: -10, left: '5%',   rotate: '-20deg', width: 6, height: 110 },
+  { color: '#6BCB77', bottom: -5,  left: '20%',  rotate: '15deg',  width: 8, height: 125 },
+  { color: '#48CAE4', bottom: -10, left: '38%',  rotate: '-8deg',  width: 5, height: 100 },
+  { color: '#C17F4A', bottom: -5,  left: '56%',  rotate: '22deg',  width: 7, height: 115 },
+  { color: '#6BCB77', bottom: -10, right: '28%', rotate: '-5deg',  width: 6, height: 108 },
+  { color: '#FF6B6B', bottom: -10, right: '16%', rotate: '-18deg', width: 6, height: 105 },
+  { color: '#FFD93D', bottom: -5,  right: '3%',  rotate: '14deg',  width: 5, height: 95  },
+];
+
 function SplashScreen({ onDone }) {
   const opacity  = useRef(new Animated.Value(0)).current;
   const fadeOut  = useRef(new Animated.Value(1)).current;
@@ -216,11 +213,26 @@ function SplashScreen({ onDone }) {
   return (
     <Animated.View style={[styles.splash, { opacity: Animated.multiply(opacity, fadeOut) }]}>
       <StatusBar style="light" />
+
+      {/* Streamers */}
+      {STREAMERS.map((s, i) => (
+        <View key={i} style={[styles.streamer, {
+          backgroundColor: s.color,
+          top: s.top ?? undefined,
+          bottom: s.bottom ?? undefined,
+          left: s.left ?? undefined,
+          right: s.right ?? undefined,
+          width: s.width,
+          height: s.height,
+          transform: [{ rotate: s.rotate }],
+        }]} />
+      ))}
+
       <View style={styles.splashLogo}>
-        <HouseIcon size={90} />
+        <Image source={require('./assets/icon.png')} style={styles.splashLogoImg} />
       </View>
       <Text style={styles.splashTitle}>Da Burbs</Text>
-      <Text style={styles.splashSubtitle}>Your everything app for{'\n'}what's going on in town.</Text>
+      <Text style={styles.splashSubtitle}>Find Fun and Events in the Chicagoland</Text>
       <View style={styles.splashGrid}>
         {SPLASH_ICONS.map((item) => (
           <View key={item.label} style={styles.splashIconCell}>
@@ -233,27 +245,59 @@ function SplashScreen({ onDone }) {
   );
 }
 
-// ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [splashDone, setSplashDone]         = useState(false);
-  const [events, setEvents]                 = useState([]);
-  const [loading, setLoading]               = useState(true);
-  const [refreshing, setRefreshing]         = useState(false);
-  const [selectedRegion, setSelectedRegion] = useState(null);
-  const [selectedTowns, setSelectedTowns]   = useState([]);
-  const [selectedTags, setSelectedTags]     = useState([]);
-  const [selectedDate, setSelectedDate]     = useState(null);
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [splashDone, setSplashDone]           = useState(false);
+  const [events, setEvents]                   = useState([]);
+  const [loading, setLoading]                 = useState(true);
+  const [refreshing, setRefreshing]           = useState(false);
+  const [selectedRegions, setSelectedRegions] = useState([]);
+  const [selectedTowns, setSelectedTowns]     = useState([]);
+  const [selectedTags, setSelectedTags]       = useState([]);
+  const [selectedDate, setSelectedDate]       = useState(null);
+  const [showDatePicker, setShowDatePicker]   = useState(false);
+  const [favRegions, setFavRegions]           = useState([]);
+  const [favTowns, setFavTowns]               = useState([]);
+  const [favLoaded, setFavLoaded]             = useState(false);
 
-  const regionTowns      = selectedRegion ? (REGIONS[selectedRegion] || []) : [];
+  useEffect(() => {
+    Promise.all([
+      AsyncStorage.getItem('favRegions'),
+      AsyncStorage.getItem('favTowns'),
+    ]).then(([rv, tv]) => {
+      if (rv) { const r = JSON.parse(rv); setFavRegions(r); if (r.length) setSelectedRegions(r); }
+      if (tv) { const t = JSON.parse(tv); setFavTowns(t); if (t.length) setSelectedTowns(t); }
+      setFavLoaded(true);
+    });
+  }, []);
+
+  const toggleFavRegion = async (region) => {
+    const next = favRegions.includes(region) ? favRegions.filter(r => r !== region) : [...favRegions, region];
+    setFavRegions(next);
+    await AsyncStorage.setItem('favRegions', JSON.stringify(next));
+  };
+
+  const toggleFavTown = async (town) => {
+    const next = favTowns.includes(town) ? favTowns.filter(t => t !== town) : [...favTowns, town];
+    setFavTowns(next);
+    await AsyncStorage.setItem('favTowns', JSON.stringify(next));
+  };
+
+  const regionTowns = selectedRegions.length > 0
+    ? [...new Set(selectedRegions.flatMap(r => REGIONS[r] || []))]
+    : [];
+
   const activeCommunities = selectedTowns.length > 0
     ? selectedTowns
-    : (selectedRegion ? regionTowns : []);
+    : regionTowns;
 
-  const selectRegion = (region) => {
-    if (region === selectedRegion) { setSelectedRegion(null); setSelectedTowns([]); }
-    else { setSelectedRegion(region); setSelectedTowns([]); }
+  const toggleRegion = (region) => {
+    setSelectedRegions(prev =>
+      prev.includes(region) ? prev.filter(r => r !== region) : [...prev, region]
+    );
+    setSelectedTowns([]);
   };
+
+  const clearAll = () => { setSelectedRegions([]); setSelectedTowns([]); };
 
   const toggleTown = (town) =>
     setSelectedTowns(prev =>
@@ -265,13 +309,37 @@ export default function App() {
       prev.includes(tagId) ? prev.filter(t => t !== tagId) : [...prev, tagId]
     );
 
-  // Client-side filters applied on top of Supabase results
+  // ── Ads ─────────────────────────────────────────────
+  const [ads, setAds] = useState([]);
+
+  const fetchAds = useCallback(async () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const { data, error } = await supabase
+        .from('ads')
+        .select('*')
+        .eq('active', true)
+        .or(`end_date.is.null,end_date.gte.${today}`)
+        .or(`start_date.is.null,start_date.lte.${today}`);
+      if (error) return; // table may not exist yet — fail silently
+      const visible = (data || []).filter(ad => {
+        if (!ad.communities || ad.communities.length === 0) return true;
+        if (activeCommunities.length === 0) return true;
+        return ad.communities.some(c => activeCommunities.includes(c));
+      });
+      setAds(visible);
+    } catch { /* ignore */ }
+  }, [activeCommunities.join(',')]);
+
+  useEffect(() => { fetchAds(); }, [fetchAds]);
+
   const displayedEvents = events.filter(e => {
     if (selectedTags.length > 0) {
       const tags = getEventTags(e);
       if (!selectedTags.some(id => tags.some(t => t.id === id))) return false;
     }
-    if (selectedDate && e.start_datetime) {
+    if (selectedDate) {
+      if (!e.start_datetime) return false;
       const evDate = new Date(e.start_datetime);
       if (
         evDate.getFullYear() !== selectedDate.getFullYear() ||
@@ -280,6 +348,19 @@ export default function App() {
       ) return false;
     }
     return true;
+  });
+
+  // Interleave ads into the event list every 8 events
+  const AD_INTERVAL = 8;
+  const feedData = [];
+  let adIdx = 0;
+  displayedEvents.forEach((event, i) => {
+    feedData.push({ type: 'event', data: event, key: `event-${event.id}` });
+    if (ads.length > 0 && (i + 1) % AD_INTERVAL === 0) {
+      const ad = ads[adIdx % ads.length];
+      feedData.push({ type: 'ad', data: ad, key: `ad-${ad.id}-${i}` });
+      adIdx++;
+    }
   });
 
   const fetchEvents = useCallback(async () => {
@@ -301,9 +382,10 @@ export default function App() {
   }, [activeCommunities.join(',')]);
 
   useEffect(() => {
+    if (!favLoaded) return;
     const load = async () => { setLoading(true); await fetchEvents(); setLoading(false); };
     load();
-  }, [fetchEvents]);
+  }, [fetchEvents, favLoaded]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -327,7 +409,34 @@ export default function App() {
     return hasTime ? `${dateOnly} at ${timeStr}` : dateOnly;
   };
 
-  const renderEvent = ({ item }) => {
+  const renderAd = ({ item }) => {
+    const ad = item.data;
+    return (
+      <View style={styles.adCard}>
+        <View style={styles.adHeader}>
+          <Text style={styles.adBusinessName}>{ad.business_name}</Text>
+          <View style={styles.sponsoredBadge}>
+            <Text style={styles.sponsoredText}>Sponsored</Text>
+          </View>
+        </View>
+        <Text style={styles.adTitle}>{ad.title}</Text>
+        {ad.description ? (
+          <Text style={styles.adDescription} numberOfLines={3}>{ad.description}</Text>
+        ) : null}
+        {ad.cta_url ? (
+          <TouchableOpacity
+            style={styles.adCta}
+            onPress={() => Linking.openURL(ad.cta_url)}
+            activeOpacity={0.75}
+          >
+            <Text style={styles.adCtaText}>{ad.cta_text || 'Learn More'}</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+    );
+  };
+
+  const renderEvent = (item) => {
     const color     = CATEGORY_COLORS[item.category] || '#888';
     const dateLabel = formatDate(item.start_datetime);
     const tags      = getEventTags(item);
@@ -337,7 +446,6 @@ export default function App() {
         <View style={[styles.cardAccent, { backgroundColor: color }]} />
         <View style={styles.cardBody}>
 
-          {/* Category + Community */}
           <View style={styles.cardHeader}>
             <View style={[styles.categoryBadge, { backgroundColor: color + '18' }]}>
               <View style={[styles.categoryDot, { backgroundColor: color }]} />
@@ -348,10 +456,8 @@ export default function App() {
             <Text style={styles.communityText}>{item.community}</Text>
           </View>
 
-          {/* Title */}
           <Text style={styles.eventTitle}>{item.title}</Text>
 
-          {/* Date */}
           {dateLabel ? (
             <View style={styles.dateRow}>
               <Text style={styles.dateDot}>•</Text>
@@ -361,17 +467,14 @@ export default function App() {
             <Text style={styles.dateTbd}>Date TBD</Text>
           )}
 
-          {/* Location */}
           {item.location ? (
             <Text style={styles.locationText} numberOfLines={1}>{item.location}</Text>
           ) : null}
 
-          {/* Description */}
           {item.description ? (
-            <Text style={styles.descriptionText} numberOfLines={2}>{item.description}</Text>
+            <Text style={styles.descriptionText} numberOfLines={4}>{item.description}</Text>
           ) : null}
 
-          {/* Event type tags */}
           {tags.length > 0 && (
             <View style={styles.tagRow}>
               {tags.slice(0, 4).map(tag => (
@@ -383,19 +486,28 @@ export default function App() {
             </View>
           )}
 
-          {/* Source + link */}
           <View style={styles.cardFooter}>
             <Text style={styles.sourceText}>{item.source_name}</Text>
-            {item.url ? (
-              <TouchableOpacity onPress={() => Linking.openURL(item.url)} activeOpacity={0.6}>
-                <Text style={styles.linkText}>View Event →</Text>
+            <View style={styles.cardFooterActions}>
+              <TouchableOpacity onPress={() => addToCalendar(item)} activeOpacity={0.6} style={styles.calBtn}>
+                <Text style={styles.calBtnText}>＋ Calendar</Text>
               </TouchableOpacity>
-            ) : null}
+              {item.url ? (
+                <TouchableOpacity onPress={() => Linking.openURL(item.url)} activeOpacity={0.6}>
+                  <Text style={styles.linkText}>View Event →</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
           </View>
 
         </View>
       </View>
     );
+  };
+
+  const renderItem = ({ item }) => {
+    if (item.type === 'ad') return renderAd({ item });
+    return renderEvent(item.data);
   };
 
   if (!splashDone) return <SplashScreen onDone={() => setSplashDone(true)} />;
@@ -407,12 +519,13 @@ export default function App() {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLogoRow}>
-          <View style={styles.headerLogo}>
-            <HouseIcon size={36} />
-          </View>
+          <Image
+            source={require('./assets/icon.png')}
+            style={styles.headerLogo}
+          />
           <View>
             <Text style={styles.headerTitle}>Da Burbs</Text>
-            <Text style={styles.headerSubtitle}>Your everything app for what's going on in town.</Text>
+            <Text style={styles.headerSubtitle}>Find Fun and Events in the Chicagoland</Text>
           </View>
         </View>
       </View>
@@ -420,97 +533,122 @@ export default function App() {
       {/* Filters */}
       <View style={styles.filterWrapper}>
 
-        {/* Region row */}
-        <View style={styles.filterRow}>
-          <TouchableOpacity
-            style={[styles.filterChip, !selectedRegion && styles.filterChipActive]}
-            onPress={() => { setSelectedRegion(null); setSelectedTowns([]); }}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.filterChipText, !selectedRegion && styles.filterChipTextActive]}>All</Text>
-          </TouchableOpacity>
+        {/* Region */}
+        <View style={styles.filterSection}>
+          <Text style={styles.filterSectionLabel}>REGION</Text>
+          <View style={styles.filterRow}>
+            <TouchableOpacity
+              style={[styles.filterChip, selectedRegions.length === 0 && styles.filterChipActive]}
+              onPress={clearAll}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.filterChipText, selectedRegions.length === 0 && styles.filterChipTextActive]}>All</Text>
+            </TouchableOpacity>
 
-          {Object.keys(REGIONS).map((region) => {
-            const hasData = REGIONS[region].length > 0;
-            const active  = selectedRegion === region;
-            return (
-              <TouchableOpacity
-                key={region}
-                style={[styles.filterChip, active && styles.filterChipActive, !hasData && styles.filterChipDisabled]}
-                onPress={() => hasData && selectRegion(region)}
-                activeOpacity={hasData ? 0.7 : 1}
-              >
-                <Text style={[styles.filterChipText, active && styles.filterChipTextActive, !hasData && styles.filterChipTextDisabled]}>
-                  {region}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* Town chips */}
-        {selectedRegion && regionTowns.length > 0 && (
-          <View style={styles.townRow}>
-            {regionTowns.map((town) => {
-              const active = selectedTowns.includes(town);
+            {Object.keys(REGIONS).map((region) => {
+              const active = selectedRegions.includes(region);
+              const faved  = favRegions.includes(region);
               return (
-                <TouchableOpacity
-                  key={town}
-                  style={[styles.townChip, active && styles.townChipActive]}
-                  onPress={() => toggleTown(town)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.townChipText, active && styles.townChipTextActive]}>{town}</Text>
-                </TouchableOpacity>
+                <View key={region} style={styles.chipWithStar}>
+                  <TouchableOpacity
+                    style={[styles.filterChip, active && styles.filterChipActive]}
+                    onPress={() => toggleRegion(region)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                      {region}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => toggleFavRegion(region)} activeOpacity={0.6} style={styles.starBtn}>
+                    <Text style={[styles.starIcon, faved && styles.starIconActive]}>{faved ? '★' : '☆'}</Text>
+                  </TouchableOpacity>
+                </View>
               );
             })}
           </View>
-        )}
+        </View>
 
-        {/* Event type tag filter */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.tagFilterContent}
-          style={styles.tagFilterRow}
-        >
-          {EVENT_TAGS.map((tag) => {
-            const active = selectedTags.includes(tag.id);
-            return (
-              <TouchableOpacity
-                key={tag.id}
-                style={[styles.tagFilterChip, active && styles.tagFilterChipActive]}
-                onPress={() => toggleTag(tag.id)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.tagFilterIcon}>{tag.icon}</Text>
-                <Text style={[styles.tagFilterText, active && styles.tagFilterTextActive]}>
-                  {tag.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        {/* Date filter */}
-        <View style={styles.dateFilterRow}>
-          <TouchableOpacity
-            style={[styles.dateFilterChip, selectedDate && styles.dateFilterChipActive]}
-            onPress={() => setShowDatePicker(true)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.dateFilterIcon}>📅</Text>
-            <Text style={[styles.dateFilterText, selectedDate && styles.dateFilterTextActive]}>
-              {selectedDate
-                ? selectedDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-                : 'Pick a date'}
-            </Text>
-          </TouchableOpacity>
-          {selectedDate && (
-            <TouchableOpacity onPress={() => setSelectedDate(null)} style={styles.dateClearBtn} activeOpacity={0.7}>
-              <Text style={styles.dateClearText}>✕ Clear</Text>
-            </TouchableOpacity>
+        {/* Suburb */}
+        <View style={styles.filterDivider} />
+        <View style={styles.filterSection}>
+          <Text style={styles.filterSectionLabel}>SUBURB</Text>
+          {selectedRegions.length === 0 ? (
+            <Text style={styles.filterHint}>Select a region above to filter by suburb</Text>
+          ) : (
+            <View style={styles.townRow}>
+              {regionTowns.map((town) => {
+                const active = selectedTowns.includes(town);
+                const faved  = favTowns.includes(town);
+                return (
+                  <View key={town} style={styles.chipWithStar}>
+                    <TouchableOpacity
+                      style={[styles.townChip, active && styles.townChipActive]}
+                      onPress={() => toggleTown(town)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.townChipText, active && styles.townChipTextActive]}>{town}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => toggleFavTown(town)} activeOpacity={0.6} style={styles.starBtn}>
+                      <Text style={[styles.starIcon, faved && styles.starIconActive]}>{faved ? '★' : '☆'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </View>
           )}
+        </View>
+
+        {/* Type */}
+        <View style={styles.filterDivider} />
+        <View style={styles.filterSection}>
+          <Text style={styles.filterSectionLabel}>TYPE</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.tagFilterContent}
+          >
+            {EVENT_TAGS.map((tag) => {
+              const active = selectedTags.includes(tag.id);
+              return (
+                <TouchableOpacity
+                  key={tag.id}
+                  style={[styles.tagFilterChip, active && styles.tagFilterChipActive]}
+                  onPress={() => toggleTag(tag.id)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.tagFilterIcon}>{tag.icon}</Text>
+                  <Text style={[styles.tagFilterText, active && styles.tagFilterTextActive]}>
+                    {tag.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* Date */}
+        <View style={styles.filterDivider} />
+        <View style={styles.filterSection}>
+          <Text style={styles.filterSectionLabel}>DATE</Text>
+          <View style={styles.dateFilterRow}>
+            <TouchableOpacity
+              style={[styles.dateFilterChip, selectedDate && styles.dateFilterChipActive]}
+              onPress={() => setShowDatePicker(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.dateFilterIcon}>📅</Text>
+              <Text style={[styles.dateFilterText, selectedDate && styles.dateFilterTextActive]}>
+                {selectedDate
+                  ? selectedDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+                  : 'Pick a date'}
+              </Text>
+            </TouchableOpacity>
+            {selectedDate && (
+              <TouchableOpacity onPress={() => setSelectedDate(null)} style={styles.dateClearBtn} activeOpacity={0.7}>
+                <Text style={styles.dateClearText}>✕ Clear</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
       </View>
@@ -529,13 +667,21 @@ export default function App() {
                 <Text style={styles.dateModalDone}>Done</Text>
               </TouchableOpacity>
             </View>
-            <DateTimePicker
-              value={selectedDate || new Date()}
-              mode="date"
-              display="spinner"
-              minimumDate={new Date()}
-              onChange={(_, date) => { if (date) setSelectedDate(date); }}
-              style={{ width: '100%' }}
+            <Calendar
+              minDate={new Date().toISOString().split('T')[0]}
+              markedDates={selectedDate ? {
+                [selectedDate.toISOString().split('T')[0]]: { selected: true, selectedColor: '#1a3c5e' }
+              } : {}}
+              onDayPress={(day) => {
+                setSelectedDate(new Date(day.dateString + 'T12:00:00'));
+                setShowDatePicker(false);
+              }}
+              theme={{
+                todayTextColor: '#1a3c5e',
+                selectedDayBackgroundColor: '#1a3c5e',
+                arrowColor: '#1a3c5e',
+                dotColor: '#1a3c5e',
+              }}
             />
           </View>
         </TouchableOpacity>
@@ -546,9 +692,9 @@ export default function App() {
         <ActivityIndicator size="large" color="#1a3c5e" style={styles.loader} />
       ) : (
         <FlatList
-          data={displayedEvents}
-          keyExtractor={(item) => item.id?.toString()}
-          renderItem={renderEvent}
+          data={feedData}
+          keyExtractor={(item) => item.key}
+          renderItem={renderItem}
           contentContainerStyle={styles.listContent}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1a3c5e" />
@@ -570,17 +716,19 @@ const styles = StyleSheet.create({
     flex: 1, backgroundColor: '#1a3c5e',
     alignItems: 'center', justifyContent: 'center', paddingHorizontal: 30,
   },
-  splashLogo: {
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 20,
+  streamer: {
+    position: 'absolute',
+    borderRadius: 4,
+    opacity: 0.85,
   },
-  splashLogoText: { color: '#FFFFFF', fontSize: 28, fontWeight: '800', letterSpacing: 2 },
-  splashTitle:    { fontSize: 42, fontWeight: '800', color: '#FFFFFF', letterSpacing: 1, marginBottom: 10 },
-  splashSubtitle: { fontSize: 16, color: '#8BAECF', textAlign: 'center', lineHeight: 24, marginBottom: 48 },
-  splashGrid:     { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 12, maxWidth: 300 },
-  splashIconCell: { width: 64, alignItems: 'center', gap: 4 },
-  splashIcon:     { fontSize: 30 },
-  splashIconLabel:{ fontSize: 10, color: '#8BAECF', fontWeight: '500' },
+  splashLogo:      { alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+  splashLogoImg:   { width: 100, height: 100, borderRadius: 22 },
+  splashTitle:     { fontSize: 42, fontWeight: '800', color: '#FFFFFF', letterSpacing: 1, marginBottom: 10 },
+  splashSubtitle:  { fontSize: 16, color: '#8BAECF', textAlign: 'center', lineHeight: 24, marginBottom: 48 },
+  splashGrid:      { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 12, maxWidth: 300 },
+  splashIconCell:  { width: 64, alignItems: 'center', gap: 4 },
+  splashIcon:      { fontSize: 30 },
+  splashIconLabel: { fontSize: 10, color: '#8BAECF', fontWeight: '500' },
 
   // ── Main ────────────────────────────────────────────
   container: { flex: 1, backgroundColor: '#F0F2F5' },
@@ -590,40 +738,56 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'ios' ? 56 : 40,
     paddingBottom: 18, paddingHorizontal: 20,
   },
-  headerLogoRow:  { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  headerLogoRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerLogo: {
-    width: 42, height: 42, borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.25)',
+    width: 44, height: 44, borderRadius: 12,
+    overflow: 'hidden',
   },
-  headerTitle:    { fontSize: 22, fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.3 },
-  headerSubtitle: { fontSize: 12, color: '#8BAECF', marginTop: 1 },
+  headerTitle: { fontSize: 22, fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.3 },
+  headerSubtitle: { fontSize: 12, color: '#8BAECF', marginTop: 2 },
 
   // ── Filters ─────────────────────────────────────────
   filterWrapper: {
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#DDE3EA',
+    backgroundColor: '#EBF1F8',
+    borderBottomWidth: 1,
+    borderBottomColor: '#C8D8E8',
+  },
+  filterSection: {
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 8,
+  },
+  filterSectionLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#5A7A96',
+    letterSpacing: 1,
+    marginBottom: 6,
+  },
+  filterDivider: {
+    height: 1,
+    backgroundColor: '#E8ECF0',
+    marginHorizontal: 0,
   },
   filterRow: {
-    flexDirection: 'row', flexWrap: 'wrap',
-    paddingHorizontal: 12, paddingTop: 10, paddingBottom: 8, gap: 8,
+    flexDirection: 'row', flexWrap: 'wrap', gap: 7,
   },
   filterChip: {
     paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20,
     backgroundColor: '#F0F2F5', borderWidth: 1, borderColor: '#DDE3EA',
   },
-  filterChipActive:       { backgroundColor: '#1a3c5e', borderColor: '#1a3c5e' },
-  filterChipDisabled:     { opacity: 0.4 },
-  filterChipText:         { fontSize: 13, fontWeight: '500', color: '#4A5568' },
-  filterChipTextActive:   { color: '#FFFFFF' },
-  filterChipTextDisabled: { color: '#A0AEC0' },
+  filterChipActive:     { backgroundColor: '#1a3c5e', borderColor: '#1a3c5e' },
+  filterChipText:       { fontSize: 13, fontWeight: '500', color: '#4A5568' },
+  filterChipTextActive: { color: '#FFFFFF' },
+
+  filterHint:      { fontSize: 12, color: '#B0BAC8', fontStyle: 'italic' },
+  chipWithStar:    { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  starBtn:         { padding: 2 },
+  starIcon:        { fontSize: 14, color: '#B0BAC8' },
+  starIconActive:  { color: '#F4A800' },
 
   townRow: {
-    flexDirection: 'row', flexWrap: 'wrap',
-    paddingHorizontal: 12, paddingBottom: 8, paddingTop: 4, gap: 6,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#EEF0F3',
+    flexDirection: 'row', flexWrap: 'wrap', gap: 6,
   },
   townChip: {
     paddingHorizontal: 12, paddingVertical: 4, borderRadius: 16,
@@ -633,13 +797,8 @@ const styles = StyleSheet.create({
   townChipText:       { fontSize: 12, fontWeight: '500', color: '#4A5568' },
   townChipTextActive: { color: '#FFFFFF' },
 
-  // Tag filter bar
-  tagFilterRow: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#EEF0F3',
-  },
   tagFilterContent: {
-    paddingHorizontal: 12, paddingVertical: 8, gap: 6,
+    gap: 6, paddingBottom: 2,
   },
   tagFilterChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -651,11 +810,8 @@ const styles = StyleSheet.create({
   tagFilterText:       { fontSize: 12, fontWeight: '500', color: '#4A5568' },
   tagFilterTextActive: { color: '#FFFFFF' },
 
-  // Date filter bar
   dateFilterRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 12, paddingVertical: 8, gap: 8,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#EEF0F3',
+    flexDirection: 'row', alignItems: 'center', gap: 8,
   },
   dateFilterChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -702,9 +858,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, gap: 5,
   },
-  categoryDot:  { width: 6, height: 6, borderRadius: 3 },
-  categoryText: { fontSize: 11, fontWeight: '600', letterSpacing: 0.3 },
-  communityText:{ fontSize: 11, color: '#718096', fontWeight: '500' },
+  categoryDot:   { width: 6, height: 6, borderRadius: 3 },
+  categoryText:  { fontSize: 11, fontWeight: '600', letterSpacing: 0.3 },
+  communityText: { fontSize: 11, color: '#718096', fontWeight: '500' },
 
   eventTitle: { fontSize: 15, fontWeight: '700', color: '#1A202C', lineHeight: 21, marginBottom: 6 },
 
@@ -716,7 +872,6 @@ const styles = StyleSheet.create({
   locationText:    { fontSize: 12, color: '#718096', marginBottom: 4 },
   descriptionText: { fontSize: 12, color: '#718096', lineHeight: 17, marginTop: 4, marginBottom: 6 },
 
-  // Event type tags on card
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 8, marginBottom: 4 },
   tagChip: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
@@ -727,10 +882,47 @@ const styles = StyleSheet.create({
   tagIcon:  { fontSize: 11 },
   tagLabel: { fontSize: 10, color: '#4A5568', fontWeight: '500' },
 
-  // Footer
-  cardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
-  sourceText: { fontSize: 11, color: '#A0AEC0', fontStyle: 'italic' },
-  linkText:   { fontSize: 12, color: '#1a3c5e', fontWeight: '600' },
+  cardFooter:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
+  cardFooterActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  sourceText:        { fontSize: 11, color: '#A0AEC0', fontStyle: 'italic' },
+  linkText:          { fontSize: 12, color: '#1a3c5e', fontWeight: '600' },
+  calBtn:            { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: '#EBF1F8', borderWidth: 1, borderColor: '#C8D8E8' },
+  calBtnText:        { fontSize: 11, color: '#1a3c5e', fontWeight: '600' },
+
+  // ── Sponsored Ad Card ───────────────────────────────
+  adCard: {
+    backgroundColor: '#FFFBF0',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#F0E0B0',
+    shadowColor: '#B8860B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  adHeader: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', marginBottom: 6,
+  },
+  adBusinessName: { fontSize: 12, fontWeight: '700', color: '#92660A' },
+  sponsoredBadge: {
+    backgroundColor: '#F4E0A0',
+    borderRadius: 6,
+    paddingHorizontal: 7, paddingVertical: 2,
+    borderWidth: 1, borderColor: '#E0C060',
+  },
+  sponsoredText:  { fontSize: 10, fontWeight: '600', color: '#92660A', letterSpacing: 0.3 },
+  adTitle:        { fontSize: 15, fontWeight: '700', color: '#1A202C', lineHeight: 21, marginBottom: 5 },
+  adDescription:  { fontSize: 12, color: '#718096', lineHeight: 17, marginBottom: 10 },
+  adCta: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#1a3c5e',
+    borderRadius: 8,
+    paddingHorizontal: 14, paddingVertical: 7,
+  },
+  adCtaText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
 
   // ── Empty ───────────────────────────────────────────
   emptyContainer: { paddingTop: 80, alignItems: 'center' },
