@@ -3,7 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import {
   StyleSheet, Text, View, FlatList, TouchableOpacity,
   ActivityIndicator, RefreshControl, Platform, Animated,
-  Linking, ScrollView, Modal, ActionSheetIOS, Alert, Image,
+  Linking, ScrollView, Modal, ActionSheetIOS, Alert, Image, Share,
 } from 'react-native';
 import * as ExpoCalendar from 'expo-calendar';
 import { Calendar } from 'react-native-calendars';
@@ -167,6 +167,15 @@ async function addToCalendar(event) {
   );
 }
 
+async function shareEvent(event, dateLabel) {
+  const lines = [event.title];
+  if (dateLabel)        lines.push(dateLabel);
+  if (event.location)   lines.push(event.location);
+  if (event.url)        lines.push(event.url);
+  try {
+    await Share.share({ message: lines.join('\n') });
+  } catch { /* user cancelled or error */ }
+}
 
 const SPLASH_ICONS = [
   { icon: '🎵', label: 'Concerts' },
@@ -254,7 +263,9 @@ export default function App() {
   const [selectedTowns, setSelectedTowns]     = useState([]);
   const [selectedTags, setSelectedTags]       = useState([]);
   const [selectedDate, setSelectedDate]       = useState(null);
+  const [weekendMode, setWeekendMode]         = useState(false);
   const [showDatePicker, setShowDatePicker]   = useState(false);
+  const [filtersOpen, setFiltersOpen]         = useState(true);
   const [favRegions, setFavRegions]           = useState([]);
   const [favTowns, setFavTowns]               = useState([]);
   const [favLoaded, setFavLoaded]             = useState(false);
@@ -333,12 +344,41 @@ export default function App() {
 
   useEffect(() => { fetchAds(); }, [fetchAds]);
 
+  // Returns [Fri, Sat, Sun] of the current/upcoming weekend, dropping days already past.
+  function getWeekendDates() {
+    const today = new Date();
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const dow = today.getDay(); // 0=Sun,1=Mon,...,5=Fri,6=Sat
+    // How many days until (or since) the Friday of this/next weekend
+    const daysToFriday = dow === 0 ? -6     // Sun → last Fri (current weekend in progress)
+                       : dow <= 4  ? 5 - dow // Mon–Thu → next Fri
+                       : 5 - dow;            // Fri(0) Sat(-1) → this weekend's Fri
+    const friday = new Date(todayStart);
+    friday.setDate(todayStart.getDate() + daysToFriday);
+    return [0, 1, 2].map(n => {
+      const d = new Date(friday);
+      d.setDate(friday.getDate() + n);
+      return d;
+    }).filter(d => d >= todayStart);
+  }
+
+  const weekendDates = weekendMode ? getWeekendDates() : [];
+
   const displayedEvents = events.filter(e => {
     if (selectedTags.length > 0) {
       const tags = getEventTags(e);
       if (!selectedTags.some(id => tags.some(t => t.id === id))) return false;
     }
-    if (selectedDate) {
+    if (weekendMode) {
+      if (!e.start_datetime) return false;
+      const evDate = new Date(e.start_datetime);
+      const matches = weekendDates.some(wd =>
+        evDate.getFullYear() === wd.getFullYear() &&
+        evDate.getMonth()    === wd.getMonth()    &&
+        evDate.getDate()     === wd.getDate()
+      );
+      if (!matches) return false;
+    } else if (selectedDate) {
       if (!e.start_datetime) return false;
       const evDate = new Date(e.start_datetime);
       if (
@@ -492,9 +532,12 @@ export default function App() {
               <TouchableOpacity onPress={() => addToCalendar(item)} activeOpacity={0.6} style={styles.calBtn}>
                 <Text style={styles.calBtnText}>＋ Calendar</Text>
               </TouchableOpacity>
+              <TouchableOpacity onPress={() => shareEvent(item, dateLabel)} activeOpacity={0.6} style={styles.shareBtn}>
+                <Text style={styles.shareBtnText}>⬆ Share</Text>
+              </TouchableOpacity>
               {item.url ? (
                 <TouchableOpacity onPress={() => Linking.openURL(item.url)} activeOpacity={0.6}>
-                  <Text style={styles.linkText}>View Event →</Text>
+                  <Text style={styles.linkText}>View →</Text>
                 </TouchableOpacity>
               ) : null}
             </View>
@@ -532,6 +575,17 @@ export default function App() {
 
       {/* Filters */}
       <View style={styles.filterWrapper}>
+        {/* Collapse toggle — always visible at the top-right */}
+        <TouchableOpacity
+          style={styles.filterToggleBtn}
+          onPress={() => setFiltersOpen(o => !o)}
+          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 16, right: 8 }}
+        >
+          <Text style={styles.filterToggleText}>{filtersOpen ? '▲ Hide filters' : '▼ Show filters'}</Text>
+        </TouchableOpacity>
+
+        {filtersOpen && (<>
 
         {/* Region */}
         <View style={styles.filterSection}>
@@ -630,10 +684,29 @@ export default function App() {
         <View style={styles.filterDivider} />
         <View style={styles.filterSection}>
           <Text style={styles.filterSectionLabel}>DATE</Text>
-          <View style={styles.dateFilterRow}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateFilterRow}>
+            {/* This weekend chip */}
+            <TouchableOpacity
+              style={[styles.dateFilterChip, weekendMode && styles.dateFilterChipActive]}
+              onPress={() => {
+                setWeekendMode(m => !m);
+                setSelectedDate(null);
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.dateFilterIcon}>🎉</Text>
+              <Text style={[styles.dateFilterText, weekendMode && styles.dateFilterTextActive]}>
+                This weekend
+              </Text>
+            </TouchableOpacity>
+
+            {/* Pick a specific date */}
             <TouchableOpacity
               style={[styles.dateFilterChip, selectedDate && styles.dateFilterChipActive]}
-              onPress={() => setShowDatePicker(true)}
+              onPress={() => {
+                setShowDatePicker(true);
+                setWeekendMode(false);
+              }}
               activeOpacity={0.7}
             >
               <Text style={styles.dateFilterIcon}>📅</Text>
@@ -643,13 +716,20 @@ export default function App() {
                   : 'Pick a date'}
               </Text>
             </TouchableOpacity>
-            {selectedDate && (
-              <TouchableOpacity onPress={() => setSelectedDate(null)} style={styles.dateClearBtn} activeOpacity={0.7}>
+
+            {(selectedDate || weekendMode) && (
+              <TouchableOpacity
+                onPress={() => { setSelectedDate(null); setWeekendMode(false); }}
+                style={styles.dateClearBtn}
+                activeOpacity={0.7}
+              >
                 <Text style={styles.dateClearText}>✕ Clear</Text>
               </TouchableOpacity>
             )}
-          </View>
+          </ScrollView>
         </View>
+
+        </>)}
 
       </View>
 
@@ -740,7 +820,7 @@ const styles = StyleSheet.create({
   },
   headerLogoRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerLogo: {
-    width: 44, height: 44, borderRadius: 12,
+    width: 54, height: 54, borderRadius: 14,
     overflow: 'hidden',
   },
   headerTitle: { fontSize: 22, fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.3 },
@@ -751,6 +831,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#EBF1F8',
     borderBottomWidth: 1,
     borderBottomColor: '#C8D8E8',
+  },
+  filterToggleBtn: {
+    alignSelf: 'flex-end',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  filterToggleText: {
+    fontSize: 11,
+    color: '#5A7A96',
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
   filterSection: {
     paddingHorizontal: 12,
@@ -811,7 +902,7 @@ const styles = StyleSheet.create({
   tagFilterTextActive: { color: '#FFFFFF' },
 
   dateFilterRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 2,
   },
   dateFilterChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -882,12 +973,14 @@ const styles = StyleSheet.create({
   tagIcon:  { fontSize: 11 },
   tagLabel: { fontSize: 10, color: '#4A5568', fontWeight: '500' },
 
-  cardFooter:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
-  cardFooterActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  cardFooter:        { marginTop: 8 },
+  cardFooterActions: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 5 },
   sourceText:        { fontSize: 11, color: '#A0AEC0', fontStyle: 'italic' },
   linkText:          { fontSize: 12, color: '#1a3c5e', fontWeight: '600' },
   calBtn:            { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: '#EBF1F8', borderWidth: 1, borderColor: '#C8D8E8' },
   calBtnText:        { fontSize: 11, color: '#1a3c5e', fontWeight: '600' },
+  shareBtn:          { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: '#EBF1F8', borderWidth: 1, borderColor: '#C8D8E8' },
+  shareBtnText:      { fontSize: 11, color: '#1a3c5e', fontWeight: '600' },
 
   // ── Sponsored Ad Card ───────────────────────────────
   adCard: {
