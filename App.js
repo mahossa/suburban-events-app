@@ -16,9 +16,9 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const REGIONS = {
-  'South Suburbs': ['Tinley Park', 'New Lenox', 'Frankfort', 'Orland Park', 'Mokena', 'Lockport'],
-  'West Suburbs':  ['Naperville', 'Downers Grove', 'Oak Park', 'Wheaton', 'Elmhurst'],
-  'North Suburbs': ['Arlington Heights', 'Mount Prospect', 'Schaumburg', 'Evanston', 'Waukegan', 'Palatine', 'Buffalo Grove', 'Hoffman Estates'],
+  'South Suburbs': ['Tinley Park', 'New Lenox', 'Frankfort', 'Orland Park', 'Mokena', 'Lockport', 'Joliet'],
+  'West Suburbs':  ['Naperville', 'Downers Grove', 'Oak Park', 'Wheaton', 'Elmhurst', 'Aurora'],
+  'North Suburbs': ['Arlington Heights', 'Mount Prospect', 'Schaumburg', 'Evanston', 'Waukegan', 'Palatine', 'Buffalo Grove', 'Hoffman Estates', 'Rosemont', 'Elgin'],
 };
 
 const CATEGORY_COLORS = {
