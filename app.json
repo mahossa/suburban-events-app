@@ -41,6 +41,14 @@
         {
           "calendarPermission": "Da Burbs needs calendar access to add events to your calendar."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#1a3c5e",
+          "sounds": []
+        }
       ]
     ]
   }
