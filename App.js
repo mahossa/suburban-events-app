@@ -31,7 +31,7 @@ const LIGHT = {
   filterLabel:     '#5A7A96',
   filterText:      '#4A5568',
   filterHint:      '#B0BAC8',
-  toggleText:      '#5A7A96',
+  toggleText:      '#C49200',
   text:            '#1A202C',
   subtext:         '#718096',
   muted:           '#A0AEC0',
@@ -68,7 +68,7 @@ const DARK = {
   filterLabel:     '#4A7090',
   filterText:      '#7DA0BC',
   filterHint:      '#3A5570',
-  toggleText:      '#4A7090',
+  toggleText:      '#D4B000',
   text:            '#D8E8F2',
   subtext:         '#7098B4',
   muted:           '#3A5570',
@@ -99,8 +99,8 @@ const FONT_MULT = { small: 0.87, medium: 1.0, large: 1.16 };
 // ── App data ─────────────────────────────────────────────────────────────────
 const REGIONS = {
   'South Suburbs': ['Tinley Park', 'New Lenox', 'Frankfort', 'Orland Park', 'Mokena', 'Lockport', 'Joliet', 'Bolingbrook'],
-  'West Suburbs':  ['Naperville', 'Downers Grove', 'Oak Park', 'Wheaton', 'Elmhurst', 'Aurora'],
-  'North Suburbs': ['Arlington Heights', 'Mount Prospect', 'Schaumburg', 'Evanston', 'Waukegan', 'Palatine', 'Buffalo Grove', 'Hoffman Estates', 'Rosemont', 'Elgin', 'Skokie', 'Highland Park', 'Lake Forest'],
+  'West Suburbs':  ['Naperville', 'Downers Grove', 'Oak Park', 'Wheaton', 'Elmhurst', 'Aurora', 'Berwyn'],
+  'North Suburbs': ['Arlington Heights', 'Mount Prospect', 'Schaumburg', 'Evanston', 'Waukegan', 'Palatine', 'Buffalo Grove', 'Hoffman Estates', 'Elgin', 'Skokie', 'Niles', 'Des Plaines'],
 };
 
 const CATEGORY_COLORS = {
@@ -376,6 +376,7 @@ export default function App() {
   const [favTowns, setFavTowns]               = useState([]);
   const [favLoaded, setFavLoaded]             = useState(false);
   const [ads, setAds]                         = useState([]);
+  const [selectedEvent, setSelectedEvent]     = useState(null);
 
   // Settings state
   const [showSettings, setShowSettings]       = useState(false);
@@ -598,7 +599,9 @@ export default function App() {
 
   // ── Data fetching ──────────────────────────────────────────────────────────
   const fetchEvents = useCallback(async () => {
-    const now = new Date().toISOString();
+    // Use start of today so date-only events (stored at midnight) still show up
+    const today = new Date();
+    const now   = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
     let query = supabase
       .from('events')
       .select('*')
@@ -679,7 +682,11 @@ export default function App() {
     const tags      = getEventTags(item);
 
     return (
-      <View style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
+      <TouchableOpacity
+        activeOpacity={0.92}
+        onPress={() => setSelectedEvent(item)}
+        style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}
+      >
         <View style={[styles.cardAccent, { backgroundColor: color }]} />
         <View style={styles.cardBody}>
 
@@ -709,7 +716,7 @@ export default function App() {
           ) : null}
 
           {item.description ? (
-            <Text style={[styles.descriptionText, { color: C.subtext, fontSize: fs(12) }]} numberOfLines={4}>{item.description}</Text>
+            <Text style={[styles.descriptionText, { color: C.subtext, fontSize: fs(12) }]} numberOfLines={3}>{item.description}</Text>
           ) : null}
 
           {tags.length > 0 && (
@@ -726,14 +733,14 @@ export default function App() {
           <View style={styles.cardFooter}>
             <Text style={[styles.sourceText, { color: C.sourceText }]}>{item.source_name}</Text>
             <View style={styles.cardFooterActions}>
-              <TouchableOpacity onPress={() => addToCalendar(item)} activeOpacity={0.6} style={[styles.calBtn, { backgroundColor: C.calBtnBg, borderColor: C.calBtnBorder }]}>
+              <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); addToCalendar(item); }} activeOpacity={0.6} style={[styles.calBtn, { backgroundColor: C.calBtnBg, borderColor: C.calBtnBorder }]}>
                 <Text style={[styles.calBtnText, { color: C.calBtnText }]}>＋ Calendar</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => shareEvent(item, dateLabel)} activeOpacity={0.6} style={[styles.shareBtn, { backgroundColor: C.calBtnBg, borderColor: C.calBtnBorder }]}>
+              <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); shareEvent(item, dateLabel); }} activeOpacity={0.6} style={[styles.shareBtn, { backgroundColor: C.calBtnBg, borderColor: C.calBtnBorder }]}>
                 <Text style={[styles.shareBtnText, { color: C.calBtnText }]}>⬆ Share</Text>
               </TouchableOpacity>
               {item.url ? (
-                <TouchableOpacity onPress={() => Linking.openURL(item.url)} activeOpacity={0.6}>
+                <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); Linking.openURL(item.url); }} activeOpacity={0.6}>
                   <Text style={[styles.linkText, { color: C.accentBlue }]}>View →</Text>
                 </TouchableOpacity>
               ) : null}
@@ -741,7 +748,7 @@ export default function App() {
           </View>
 
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -751,6 +758,134 @@ export default function App() {
   };
 
   if (!splashDone) return <SplashScreen onDone={() => setSplashDone(true)} />;
+
+  // ── Render: Event Detail Modal ────────────────────────────────────────────
+  const eventDetailModal = (() => {
+    if (!selectedEvent) return null;
+    const item      = selectedEvent;
+    const color     = CATEGORY_COLORS[item.category] || '#888';
+    const dateLabel = formatDate(item.start_datetime);
+    const tags      = getEventTags(item);
+    return (
+      <Modal visible={!!selectedEvent} animationType="slide" presentationStyle="pageSheet">
+        <View style={[styles.detailContainer, { backgroundColor: C.settingsBg }]}>
+
+          {/* Accent bar + back button */}
+          <View style={[styles.detailAccentBar, { backgroundColor: color }]} />
+          <View style={[styles.detailTopRow, { borderBottomColor: C.settingsDivider }]}>
+            <TouchableOpacity
+              onPress={() => setSelectedEvent(null)}
+              style={styles.detailBackBtn}
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 20 }}
+            >
+              <Text style={[styles.detailBackText, { color: C.accentBlue }]}>← Back</Text>
+            </TouchableOpacity>
+            <View style={[styles.categoryBadge, { backgroundColor: color + (darkMode ? '30' : '18') }]}>
+              <View style={[styles.categoryDot, { backgroundColor: color }]} />
+              <Text style={[styles.categoryText, { color }]}>
+                {CATEGORY_LABELS[item.category] || item.category}
+              </Text>
+            </View>
+          </View>
+
+          <ScrollView style={styles.detailScroll} contentContainerStyle={styles.detailScrollContent} showsVerticalScrollIndicator={false}>
+
+            {/* Title & community */}
+            <Text style={[styles.detailTitle, { color: C.text, fontSize: fs(20) }]}>{item.title}</Text>
+            <Text style={[styles.detailCommunity, { color: C.subtext }]}>{item.community}</Text>
+
+            {/* Date */}
+            {dateLabel ? (
+              <View style={[styles.detailInfoRow, { borderColor: C.settingsDivider }]}>
+                <Text style={styles.detailInfoIcon}>📅</Text>
+                <Text style={[styles.detailInfoText, { color: C.text, fontSize: fs(14) }]}>{dateLabel}</Text>
+              </View>
+            ) : (
+              <View style={[styles.detailInfoRow, { borderColor: C.settingsDivider }]}>
+                <Text style={styles.detailInfoIcon}>📅</Text>
+                <Text style={[styles.detailInfoText, { color: C.muted, fontStyle: 'italic', fontSize: fs(14) }]}>Date TBD</Text>
+              </View>
+            )}
+
+            {/* Location — tap to open Maps */}
+            {item.location ? (
+              <TouchableOpacity
+                style={[styles.detailInfoRow, { borderColor: C.settingsDivider }]}
+                activeOpacity={0.7}
+                onPress={() => {
+                  const q = encodeURIComponent(item.location);
+                  ActionSheetIOS.showActionSheetWithOptions(
+                    { options: ['Apple Maps', 'Google Maps', 'Waze', 'Cancel'], cancelButtonIndex: 3 },
+                    (idx) => {
+                      if (idx === 0) Linking.openURL(`maps://maps.apple.com/?q=${q}`);
+                      if (idx === 1) Linking.openURL(`https://maps.google.com/?q=${q}`);
+                      if (idx === 2) Linking.openURL(`https://waze.com/ul?q=${q}&navigate=yes`);
+                    }
+                  );
+                }}
+              >
+                <Text style={styles.detailInfoIcon}>📍</Text>
+                <Text style={[styles.detailInfoText, { color: C.accentBlue, fontSize: fs(14), textDecorationLine: 'underline' }]}>{item.location}</Text>
+              </TouchableOpacity>
+            ) : null}
+
+            {/* Tags */}
+            {tags.length > 0 && (
+              <View style={styles.detailTagRow}>
+                {tags.map(tag => (
+                  <View key={tag.id} style={[styles.tagChip, { backgroundColor: C.tagChipBg, borderColor: C.tagChipBorder }]}>
+                    <Text style={styles.tagIcon}>{tag.icon}</Text>
+                    <Text style={[styles.tagLabel, { color: C.tagText }]}>{tag.label}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Description */}
+            {item.description ? (
+              <View style={[styles.detailDescBox, { backgroundColor: C.card, borderColor: C.settingsDivider }]}>
+                <Text style={[styles.detailDescText, { color: C.subtext, fontSize: fs(14) }]}>{item.description}</Text>
+              </View>
+            ) : null}
+
+            {/* Source */}
+            <Text style={[styles.detailSource, { color: C.muted }]}>Source: {item.source_name}</Text>
+
+            {/* Action buttons */}
+            <View style={styles.detailActions}>
+              <TouchableOpacity
+                style={[styles.detailActionBtn, { backgroundColor: C.accentBlue }]}
+                onPress={() => addToCalendar(item)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.detailActionBtnText}>＋ Add to Calendar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.detailActionBtnOutline, { borderColor: C.accentBlue }]}
+                onPress={() => shareEvent(item, dateLabel)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.detailActionBtnOutlineText, { color: C.accentBlue }]}>⬆ Share Event</Text>
+              </TouchableOpacity>
+
+              {item.url ? (
+                <TouchableOpacity
+                  style={[styles.detailActionBtnOutline, { borderColor: C.accentBlue }]}
+                  onPress={() => Linking.openURL(item.url)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.detailActionBtnOutlineText, { color: C.accentBlue }]}>View Full Details →</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+          </ScrollView>
+        </View>
+      </Modal>
+    );
+  })();
 
   // ── Render: Notification Prompt (shown on first star) ─────────────────────
   const notifPromptModal = (
@@ -1001,6 +1136,7 @@ export default function App() {
 
       {settingsModal}
       {notifPromptModal}
+      {eventDetailModal}
 
       {/* Header */}
       <View style={styles.header}>
@@ -1264,14 +1400,14 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: '#1a3c5e',
     paddingTop: Platform.OS === 'ios' ? 56 : 40,
-    paddingBottom: 18, paddingHorizontal: 20,
+    paddingBottom: 12, paddingHorizontal: 20,
   },
   headerLogoRow:  { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerLogo:     { width: 54, height: 54, borderRadius: 14, overflow: 'hidden' },
   headerTitle:    { fontSize: 22, fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.3 },
   headerSubtitle: { fontSize: 12, color: '#8BAECF', marginTop: 2 },
-  headerGearBtn:  { padding: 4 },
-  headerGearIcon: { fontSize: 22 },
+  headerGearBtn:  { padding: 4, alignSelf: 'center' },
+  headerGearIcon: { fontSize: 22, lineHeight: 26 },
 
   // ── Filters ─────────────────────────────────────────
   filterWrapper: {
@@ -1522,6 +1658,45 @@ const styles = StyleSheet.create({
 
   settingsFooter: { alignItems: 'center', paddingVertical: 32 },
   settingsFooterText: { fontSize: 12 },
+
+  // ── Event Detail ────────────────────────────────────────────────────────────
+  detailContainer:   { flex: 1 },
+  detailAccentBar:   { height: 5, width: '100%' },
+  detailTopRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  detailBackBtn:  { paddingVertical: 4, paddingRight: 12 },
+  detailBackText: { fontSize: 16, fontWeight: '600' },
+  detailScroll:   { flex: 1 },
+  detailScrollContent: { padding: 20, paddingBottom: 60 },
+  detailTitle:    { fontWeight: '800', lineHeight: 28, marginBottom: 4 },
+  detailCommunity:{ fontSize: 13, fontWeight: '500', marginBottom: 20 },
+  detailInfoRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  detailInfoIcon: { fontSize: 17, marginTop: 1 },
+  detailInfoText: { flex: 1, fontWeight: '500', lineHeight: 21 },
+  detailTagRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 16, marginBottom: 4 },
+  detailDescBox: {
+    marginTop: 20, padding: 16,
+    borderRadius: 12, borderWidth: StyleSheet.hairlineWidth,
+  },
+  detailDescText: { lineHeight: 22 },
+  detailSource:   { fontSize: 11, fontStyle: 'italic', marginTop: 20, marginBottom: 4 },
+  detailActions:  { gap: 12, marginTop: 28 },
+  detailActionBtn: {
+    borderRadius: 14, paddingVertical: 15, alignItems: 'center',
+  },
+  detailActionBtnText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
+  detailActionBtnOutline: {
+    borderRadius: 14, paddingVertical: 14, alignItems: 'center',
+    borderWidth: 1.5,
+  },
+  detailActionBtnOutlineText: { fontSize: 15, fontWeight: '600' },
 
   // ── Notification Prompt ─────────────────────────────────────────────────────
   notifPromptOverlay: {
