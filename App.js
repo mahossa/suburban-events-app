@@ -98,7 +98,7 @@ const FONT_MULT = { small: 0.87, medium: 1.0, large: 1.16 };
 
 // ── App data ─────────────────────────────────────────────────────────────────
 const REGIONS = {
-  'South Suburbs': ['Tinley Park', 'New Lenox', 'Frankfort', 'Orland Park', 'Mokena', 'Lockport', 'Joliet', 'Bolingbrook'],
+  'South Suburbs': ['Tinley Park', 'New Lenox', 'Frankfort', 'Orland Park', 'Mokena', 'Lemont', 'Lockport', 'Joliet', 'Bolingbrook'],
   'West Suburbs':  ['Naperville', 'Downers Grove', 'Oak Park', 'Wheaton', 'Elmhurst', 'Aurora', 'Berwyn', 'Hinsdale', 'La Grange'],
   'North Suburbs': ['Arlington Heights', 'Mount Prospect', 'Schaumburg', 'Evanston', 'Waukegan', 'Palatine', 'Buffalo Grove', 'Hoffman Estates', 'Elgin', 'Skokie', 'Niles', 'Des Plaines', 'Glenview', 'Wilmette'],
 };
