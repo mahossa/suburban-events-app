@@ -631,7 +631,7 @@ export default function App() {
   };
 
   // ── Date formatting ────────────────────────────────────────────────────────
-  const formatDate = (dateStr) => {
+  const formatDate = (dateStr, endDateStr) => {
     if (!dateStr) return null;
     const date     = new Date(dateStr);
     const today    = new Date();
@@ -641,6 +641,21 @@ export default function App() {
     const isTomorrow = date.toDateString() === tomorrow.toDateString();
     const hasTime    = date.getHours() !== 0 || date.getMinutes() !== 0;
     const timeStr    = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+    // Multi-day event: show "Jul 1–5" or "Oct 2–3"
+    if (endDateStr) {
+      const endDate = new Date(endDateStr);
+      const sameDay = date.toDateString() === endDate.toDateString();
+      if (!sameDay) {
+        const startShort = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const endDay     = endDate.toLocaleDateString('en-US', { day: 'numeric' });
+        const endMonth   = endDate.toLocaleDateString('en-US', { month: 'short' });
+        const sameMonth  = date.getMonth() === endDate.getMonth() && date.getFullYear() === endDate.getFullYear();
+        const rangeStr   = sameMonth ? `${startShort}–${endDay}` : `${startShort}–${endMonth} ${endDay}`;
+        return hasTime ? `${rangeStr} at ${timeStr}` : rangeStr;
+      }
+    }
+
     if (isToday)    return hasTime ? `Today at ${timeStr}` : 'Today';
     if (isTomorrow) return hasTime ? `Tomorrow at ${timeStr}` : 'Tomorrow';
     const dateOnly = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
@@ -678,7 +693,7 @@ export default function App() {
   // ── Render: Event card ─────────────────────────────────────────────────────
   const renderEvent = (item) => {
     const color     = CATEGORY_COLORS[item.category] || '#888';
-    const dateLabel = formatDate(item.start_datetime);
+    const dateLabel = formatDate(item.start_datetime, item.end_datetime);
     const tags      = getEventTags(item);
 
     return (
@@ -764,7 +779,7 @@ export default function App() {
     if (!selectedEvent) return null;
     const item      = selectedEvent;
     const color     = CATEGORY_COLORS[item.category] || '#888';
-    const dateLabel = formatDate(item.start_datetime);
+    const dateLabel = formatDate(item.start_datetime, item.end_datetime);
     const tags      = getEventTags(item);
     return (
       <Modal visible={!!selectedEvent} animationType="slide" presentationStyle="pageSheet">
